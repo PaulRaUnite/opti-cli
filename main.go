@@ -90,7 +90,11 @@ func action(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	presolve := cond.MinimalTaxesMethod()
+	presolve, err := cond.MinimalTaxesMethod()
+	if err != nil {
+		fmt.Println(presolve)
+		return err
+	}
 	fmt.Println("Minimal taxes method")
 	fmt.Println(presolve.WellPrintedString())
 	fmt.Println("Cost function:", presolve.CostFunc())
