@@ -8,9 +8,19 @@ import (
 	"strconv"
 	"strings"
 
+	"time"
+
 	"github.com/PaulRaUnite/opti-transport"
+	log "github.com/Sirupsen/logrus"
 	"gopkg.in/urfave/cli.v2"
 )
+
+func init() {
+	// Output to stdout instead of the default stderr
+	// Can be any io.Writer, see below for File example
+	log.SetOutput(os.Stdout)
+	log.SetFormatter(&log.TextFormatter{ForceColors: true, DisableSorting: true})
+}
 
 func main() {
 	app := cli.App{
@@ -20,6 +30,7 @@ func main() {
 		Version:     "0.0.1",
 		Action:      action,
 		HideVersion: true,
+		ErrWriter:   (&log.Logger{}).WriterLevel(log.ErrorLevel),
 	}
 	app.Run(os.Args)
 }
@@ -28,16 +39,11 @@ var (
 	errorSrcArg = errors.New("SRC field is empty")
 )
 
-func action(c *cli.Context) error {
-	//get src
-	srcArg := c.Args().First()
-	if srcArg == "" {
-		return errorSrcArg
-	}
+func processFile(filename string) ([][]float64, []float64, []float64, error) {
 	//open file
-	file, err := os.Open(srcArg)
+	file, err := os.Open(filename)
 	if err != nil {
-		return err
+		return nil, nil, nil, err
 	}
 	//get lines and split by " "
 	var strMatrix [][]string
@@ -47,21 +53,22 @@ func action(c *cli.Context) error {
 	}
 	//if something goes wrong
 	if err := scanner.Err(); err != nil {
-		return err
+		return nil, nil, nil, err
 	}
-	//convert string into int
+	//convert string into float64
 	var taxes [][]float64
 	var productPoints, salePoints []float64
-	for i := 0; i < len(strMatrix); i++ {
+	for i, subarr := range strMatrix {
 		var temp []float64
+		//sales
 		if i == len(strMatrix)-1 {
-			for j := 0; j < len(strMatrix[i]); j++ {
-				if len(strMatrix[i][j]) == 0 {
+			for _, value := range subarr {
+				if len(value) == 0 {
 					continue
 				}
-				value, err := strconv.ParseFloat(strMatrix[i][j], 64)
+				value, err := strconv.ParseFloat(value, 64)
 				if err != nil {
-					return err
+					return nil, nil, nil, err
 				}
 
 				temp = append(temp, value)
@@ -69,40 +76,60 @@ func action(c *cli.Context) error {
 			salePoints = temp
 			break
 		}
-		for j := 0; j < len(strMatrix[i]); j++ {
-			if len(strMatrix[i][j]) == 0 {
+		//main matrix and products
+		for j, value := range subarr {
+			if len(value) == 0 {
 				continue
 			}
-			value, err := strconv.ParseFloat(strMatrix[i][j], 64)
+			product, err := strconv.ParseFloat(value, 64)
 			if err != nil {
-				return err
+				return nil, nil, nil, err
 			}
-			if j == len(strMatrix[i])-1 {
-				productPoints = append(productPoints, value)
+			if j == len(subarr)-1 {
+				productPoints = append(productPoints, product)
 				break
 			}
-			temp = append(temp, value)
+			temp = append(temp, product)
 		}
 		taxes = append(taxes, temp)
 	}
+	return taxes, productPoints, salePoints, nil
+}
 
-	cond, err := opti_transport.NewCondition(productPoints, salePoints, taxes)
+func action(c *cli.Context) error {
+	//get src
+	filename := c.Args().First()
+	if filename == "" {
+		return errorSrcArg
+	}
+	taxes, products, sales, err := processFile(filename)
 	if err != nil {
 		return err
 	}
+
+	cond, err := opti_transport.NewCondition(products, sales, taxes, 4)
+	if err != nil {
+		return err
+	}
+	point1 := time.Now()
 	presolve, err := cond.MinimalTaxesMethod()
+	point2 := time.Now()
 	if err != nil {
 		fmt.Println(presolve)
 		return err
 	}
-	fmt.Println("Minimal taxes method")
+	log.Info("minimal taxes method...")
 	fmt.Println(presolve.WellPrintedString())
-	fmt.Println("Cost function:", presolve.CostFunc())
+	log.Info("cost function := ", presolve.CostFunc())
+	log.Info("time := ", point2.Sub(point1).String())
 
-	fmt.Println("Optimizing...")
+	log.Info("optimizing...")
+	point1 = time.Now()
 	presolve.Optimize()
+	point2 = time.Now()
 
 	fmt.Println(presolve.WellPrintedString())
-	fmt.Println("Cost function:", presolve.CostFunc())
+	log.Info("cost function := ", presolve.CostFunc())
+	log.Info("time := ", point2.Sub(point1).String())
 	return nil
 }
