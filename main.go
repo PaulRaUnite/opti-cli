@@ -31,6 +31,15 @@ func main() {
 		Action:      action,
 		HideVersion: true,
 		ErrWriter:   (&log.Logger{}).WriterLevel(log.ErrorLevel),
+		Flags: []cli.Flag{
+			&cli.IntFlag{
+				Name:"precision",
+				Aliases:[]string{
+					"p",
+				},
+				Usage:"precision of your float numbers",
+			},
+		},
 	}
 	app.Run(os.Args)
 }
@@ -66,7 +75,7 @@ func processFile(filename string) ([][]float64, []float64, []float64, error) {
 				if len(value) == 0 {
 					continue
 				}
-				value, err := strconv.ParseFloat(value, 64)
+				value, err := strconv.ParseFloat(strings.Replace(value, ",", ".", 1), 64)
 				if err != nil {
 					return nil, nil, nil, err
 				}
@@ -81,7 +90,7 @@ func processFile(filename string) ([][]float64, []float64, []float64, error) {
 			if len(value) == 0 {
 				continue
 			}
-			product, err := strconv.ParseFloat(value, 64)
+			product, err := strconv.ParseFloat(strings.Replace(value, ",", ".", 1), 64)
 			if err != nil {
 				return nil, nil, nil, err
 			}
@@ -102,12 +111,17 @@ func action(c *cli.Context) error {
 	if filename == "" {
 		return errorSrcArg
 	}
+	precision := c.Int("p")
+	if precision == 0 {
+		precision = 4 //4 digits after dot
+	}
+	log.Info("precision := ", precision)
 	taxes, products, sales, err := processFile(filename)
 	if err != nil {
 		return err
 	}
 
-	cond, err := opti_transport.NewCondition(products, sales, taxes, 4)
+	cond, err := opti_transport.NewCondition(products, sales, taxes, precision)
 	if err != nil {
 		return err
 	}
